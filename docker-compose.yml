@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    container_name: zookeeper-portfolio
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    ports:
+      - "2181:2181"
+    volumes:
+      - ${HOST_SHARED_DIR}/zookeeper:/bitnami/zookeeper
+    networks:
+      - hadoop_spark_network
+
+  kafka:
+    image: bitnami/kafka:3.4
+    container_name: kafka-portfolio
+    depends_on:
+      - zookeeper
+    environment:
+      - BITNAMI_DEBUG=true
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      # ✅ FIXED LISTENERS CONFIGURATION:
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,EXTERNAL://:29092
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka-portfolio:9092,EXTERNAL://localhost:29092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    volumes:
+      - ${HOST_SHARED_DIR}/kafka:/bitnami/kafka
+    networks:
+      - hadoop_spark_network
+
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb-local-portfolio
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /data"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ${HOST_SHARED_DIR}/dynamodb-local:/data
+    networks:
+      - hadoop_spark_network
+
+  dynamodb:
+    image: "aaronshaf/dynamodb-admin"
+    container_name: dynamodb-admin-portfolio
+    depends_on:
+      - dynamodb-local
+    restart: always
+    ports:
+      - "8001:8001"
+    environment:
+      - DYNAMO_ENDPOINT=http://dynamodb-local:8000
+      - AWS_REGION=ap-southeast-1
+    networks:
+      - hadoop_spark_network
+
+  spark-jupyter:
+    image: jupyter/all-spark-notebook:python-3.11.6
+    container_name: spark-jupyter-portfolio
+    ports:
+      - "8888:8888"
+      - "4040:4040"
+    environment:
+      JUPYTER_PORT: 8888
+      SPARK_UI_PORT: 4040
+      GRANT_SUDO: yes
+    volumes:
+      - ${HOST_SHARED_DIR}/spark-jupyter-data:/home/jovyan/data
+    networks:
+      - hadoop_spark_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  zookeeper:
+  kafka:
+  dynamodb:
+  spark-jupyter:
+
+networks:
+  hadoop_spark_network:
+    driver: bridge
